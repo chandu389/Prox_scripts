@@ -1,25 +1,24 @@
 /*
-Name: PSC_Get_SITable.js
+Name: PSC_Add_SI_Record.js
 Author: Alejandro Madurga (almadurg@cisco.com)
-Date: 16th December 2015
+Date: 17h December 2015
 Version: 1.0
 UCSD Version: 5.3
 PSC Version 11.1 (Virtual Appliance)
 
 Description:
-	This Custom task gets a table for a SI defined in PSC
+	This Custom adds a new record to an existing table in PSC
 
 	//INPUTS:
 		PSCCredentials: [Credential Policy] Mandatory
 		PSCIP: [Generic Text input] Mandatory
 		SITableName: [Generic Text input] Mandatory
-		filter: [Generic Text Input] Optional Filter, if there is a filter, it will be used on the query.
-			Format should be [FieldName][Operator][FieldValue]
-			ie: Name=test
-			Refer to the Integration guide for futher information.
+		SIData:[Generic Text Input] Mandatory, it should have the following format:
+		[FieldName1]=[FieldValue1];[FieldName2]=[FieldValue2];
+		rollback: [Boolean] If checked, the SI will be deleted on rollback.
 
 	//OUTPUTS
-		SITableData:[Generic Text Input]: The JSON Table from PSC.
+		NONE
 */
 
 //IMPORTS
@@ -62,57 +61,87 @@ function getAccount(accountName){
 	}
 }
 
-   /**
-     * Get the JSON table from PSC with ALL the rows if no filter is used.
-     *
-     * @return JSON String with the table details.
-     */
-function getSITable(PSCIP,PSCPort,PSCProtocol,PSCUser,PSCPassword,SITableName,filter){
-	if (PSCProtocol == "http"){
+function addSI(PSCIP,PSCPort,PSCUser,PSCProtocol,PSCPassword,SITableName,SIData,action){
+  if (PSCProtocol == "http"){
 		var httpsClient = new HttpClient();
 		httpsClient.getHostConfiguration().setHost(PSCIP, 80, "http");
 	}else{
 		var httpsClient = CustomEasySSLSocketFactory.getIgnoreSSLClient(PSCIP,PSCPort);
 	}
+
 	httpsClient.getParams().setCookiePolicy("default");
-	if(SITableName.indexOf("Si")!=0){
-		SITableName = "Si" + SITableName;
+	//Create the JSON estructure
+	var jsonData = new HashMap();
+	var serviceitem = new HashMap();
+	var serviceItemData = new HashMap();
+	var serviceItemAttribute = util.createNameValueList();
+	for (i=0;i<SIData.length;i++){
+		var name = SIData[i].split("=")[0];
+		var value = SIData[i].split("=")[1];
+		serviceItemAttribute.addNameValue(name,value);
 	}
-	var tableURL = "/RequestCenter/nsapi/serviceitem/" +  SITableName;
-	if (filter !=""){
-		tableURL = tableURL + "/" + filter;
+	serviceItemData.put("serviceItemAttribute",serviceItemAttribute.getList())
+	serviceitem.put("name",SITableName);
+	serviceitem.put("serviceItemData",serviceItemData);
+	jsonData.put("serviceitem",serviceitem);
+	var tableURL = "/RequestCenter/nsapi/serviceitem/process";
+	if(action == "Create"){
+		var httpMethod = new PostMethod(tableURL);
 	}
-	var httpMethod = new GetMethod(tableURL);
+	else{
+		var httpMethod = new PutMethod(tableURL);
+	}
+	var dataPayload = String(JSON.javaToJsonString(jsonData, jsonData.getClass()));
+	//dataPayload = dataPayload.replace(/'/g, '"');
+	requestEntity = new StringRequestEntity(dataPayload,"application/json","UTF-8");
+	httpMethod.setRequestEntity(requestEntity);
 	httpMethod.addRequestHeader("username", PSCUser);
 	httpMethod.addRequestHeader("password", PSCPassword);
-	httpMethod.addRequestHeader("Content-type", "application/json");
 	httpsClient.executeMethod(httpMethod);
 	var statuscode = httpMethod.getStatusCode();
 	if (statuscode != 200)
 	{
-		logger.addError("Unable to get the table data with name " + SITableName + ". HTTP response code: " + statuscode);
+		logger.addError("Unable to add the new SI on the table " + SITableName + ". HTTP response code: " + statuscode);
 		logger.addError("Response = "+httpMethod.getResponseBodyAsString());
 	 	httpMethod.releaseConnection();
 	    // Set this task as failed.
 		ctxt.setFailed("Request failed.");
 		ctxt.exit()
 	} else {
-		logger.addInfo("Table " + SITableName + " retrieved successfully.");
 		var responseBody = String(httpMethod.getResponseBodyAsString());
 		logger.addInfo(responseBody)
-		return responseBody;
-
 	}
 }
+
+//This function uses the custom SSH Command Task to run the undo commands.
+function registerUndoTask(PSCCredentials,PSCIP,SITableName,SIName)
+{
+
+	var handler = "custom_PSC_Delete_SI_Record";
+	var task = ctxt.createInnerTaskContext("custom_PSC_Delete_SI_Record");
+
+    task.setInput("PSCCredentials",PSCCredentials);
+	task.setInput("PSCIP",PSCIP);
+	task.setInput("SITableName",SITableName);
+	task.setInput("SIName",SIName);
+    ctxt.getChangeTracker().undoableResourceModified("Delete Service Item.",
+                String(ctxt.getSrId()),
+                "Delete Service Item",
+				"Table: " + SITableName + " Name: " + SIName ,
+                handler,
+                task.getConfigObject());
+}
+
 
 //
 //	MAIN PROGRAM
 //
 var PSCCredentials  = String(input.PSCCredentials)
 var PSCIP  = String(input.PSCIP)
-var SITableName  = String(input.SITableName)
-var filter = String(input.filter)
-
+var SITableName  = String(input.SITableName);
+var SIData = String(input.SIData).split(";");
+var action = String(input.action);
+var rollback = String(input.rollback);
 //Get the info from the account.
 var PSCAccount = getAccount(PSCCredentials);
 var PSCUser = PSCAccount.getUserName();
@@ -126,24 +155,14 @@ logger.addInfo(" ---- Username: " + PSCUser );
 logger.addInfo(" ---- Protocol: " + PSCProtocol);
 logger.addInfo(" ---- Port: " + String(PSCPort));
 
-//var token = PSCLogin(PSCIP,PSCUser,PSCPassword,PSCPort);
-output.SITableData = getSITable(PSCIP,PSCPort,PSCProtocol,PSCUser,PSCPassword,SITableName,filter);
-// A sample JSON parser for the future:
-var jsonData = String(output.SITableData);  //Get the JSON String.
-importPackage(org.json)
-var results = new JSONObject(jsonData);
-var serviceitem = results.getJSONObject("serviceitem");
-var serviceItemData = serviceitem.getJSONArray("serviceItemData")
-logger.addInfo("Total Rows: " + String(serviceItemData.length()));
-for (i=0;i<serviceItemData.length();i++){
-	logger.addInfo("Showing Row: " + String(i+1));
-	var row = serviceItemData.getJSONObject(i);
-	var items = row.getJSONArray("items");
-	var fields = items.getJSONObject(0);
-	var iterator = fields.keys();
-	logger.addInfo("Fields: ")
-	while(iterator.hasNext()){
-		var fieldName = iterator.next();
-		logger.addInfo(String(fieldName) + " = " + fields.getString(fieldName));
-    }
+addSI(PSCIP,PSCPort,PSCUser,PSCProtocol,PSCPassword,SITableName,SIData,action);
+if(rollback == "true" && action == "Create"){
+	for(i=0;i<SIData.length;i++){
+		var name = SIData[i].split("=")[0];
+		var value = SIData[i].split("=")[1];
+		if (name == "Name"){
+			var SIName = value;
+		}
+	}
+	registerUndoTask(PSCCredentials,PSCIP,SITableName,SIName)
 }
