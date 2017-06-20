@@ -51,7 +51,7 @@ var xPath =  XPathFactory.newInstance().newXPath();
 var expression = "/lmc/result";
 var list = xPath.compile(expression).evaluate(doc, XPathConstants.NODESET);
 var UUIDStr,exists,action,filter,SIData,letter,code,description;
-for(i=0;i<list.length;i++){
+for(var i=0;i<list.length;i++){
 	SIData    = [];
   try{
     letter = list.item(i).getElementsByTagName("letter").item(0).getTextContent();

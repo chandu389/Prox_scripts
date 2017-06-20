@@ -26,6 +26,7 @@ importPackage(org.json);
 importPackage(org.w3c.dom);
 importPackage(javax.xml.xpath);
 importPackage(javax.xml.parsers);
+importPackage(java.util.concurrent);
 loadLibrary("Generic/getAccount");
 loadLibrary("Generic/generateUUID");
 loadLibrary("PSC/SITasks");
@@ -33,6 +34,7 @@ loadLibrary("PSC/SITasks");
 //
 //	MAIN PROGRAM
 //
+
 var PSCAccount		= 	getAccount(input.PSCCredentials);
 var PSCUser			= 	PSCAccount.getUserName();
 var PSCPassword 	= 	PSCAccount.getPassword();
@@ -87,4 +89,8 @@ for(var i=0;i<list.length;i++){
 	  SIData = ["Name="+UUIDStr,"code="+code,"description="+description];
   }
   addSI(PSCIP,PSCPort,PSCUser,PSCProtocol,PSCPassword,SITableName,SIData,action);
+  if(i%1000 == 0 && i != 0){
+      logger.addInfo("Entering into sleep mode...");
+      TimeUnit.SECONDS.sleep(240);
+  }
 }
