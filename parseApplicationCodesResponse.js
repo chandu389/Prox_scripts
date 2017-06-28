@@ -53,44 +53,56 @@ var xPath =  XPathFactory.newInstance().newXPath();
 var expression = "/lmc/result";
 var list = xPath.compile(expression).evaluate(doc, XPathConstants.NODESET);
 var UUIDStr,exists,action,filter,SIData,code,description;
+if (PSCProtocol == "http"){
+    var httpClient = new HttpClient();
+    httpClient.getHostConfiguration().setHost(PSCIP, 80, "http");
+}else{
+    var httpClient = CustomEasySSLSocketFactory.getIgnoreSSLClient(PSCIP,PSCPort);
+}
+httpClient.getParams().setCookiePolicy("default");
 for(var i=0;i<list.length;i++){
   SIData = [];
   try{
-  	code = list.item(i).getElementsByTagName("code").item(0).getTextContent();
-	logger.addInfo("code : "+code)
+  	code = list.item(i).getElementsByTagName("code").item(0).getTextContent().replace(/\s*$/,"");
   	description = list.item(i).getElementsByTagName("description").item(0).getTextContent().replace(/;/g, ',');
   }catch(err){
     logger.addError("failed:"+err.message);
     continue;
   }
-  if (code == null || code == ""){
+
+  if (code == null || code == "" || code == "FortÃ© C/C++"){
 	  continue;
   }else if(code.indexOf("(") != -1 || code.indexOf(")") != -1 ||  code.indexOf("\n") != -1){
 	  code = code.replace(/[\(,\),\n]/g,'');
   }
+
   filter = "code="+code;
-  var data 		    = 	getSITablePost(PSCIP,PSCPort,PSCProtocol,PSCUser,PSCPassword,SITableName,filter);
+  var data 		    = 	getSITablePostwithClient(httpClient,PSCIP,PSCPort,PSCProtocol,PSCUser,PSCPassword,SITableName,filter);
   var jsonData		= 	String(data);  //Get the JSON String.
   var results 		= 	new JSONObject(jsonData);
   var serviceitem 		= 	results.getJSONObject("serviceitem");
   var serviceItemData 	=	serviceitem.getJSONArray("serviceItemData");
   if (serviceItemData.length() > 0){
-	 action	 = "Update";
 	 var row = serviceItemData.getJSONObject(0);
 	 var items = row.getJSONArray("items");
 	 var fields = items.getJSONObject(0);
-	 SIData.push("Name="+String(fields.get("Name")));
-	 SIData.push("code="+code);
-	 SIData.push("description="+description);
+     if(code == null || code == "" || (code == String(fields.get("code")) && description == String(fields.get("description")))){
+        continue;
+     }else{
+         action	 = "Update";
+         SIData.push("Name="+String(fields.get("Name")));
+    	 SIData.push("code="+code);
+    	 SIData.push("description="+description);
+     }
 	 //SIData    = SIData.replace("/(.*?)=.*?;(.*)/","$1="+generateUUID()+";$2");
   }else{
 	  UUIDStr = generateUUID();
 	  action = "Create";
 	  SIData = ["Name="+UUIDStr,"code="+code,"description="+description];
   }
-  addSI(PSCIP,PSCPort,PSCUser,PSCProtocol,PSCPassword,SITableName,SIData,action);
-  if(i%1000 == 0 && i != 0){
-      logger.addInfo("Entering into sleep mode...");
-      TimeUnit.SECONDS.sleep(240);
-  }
+  addSIwithClient(httpClient,PSCIP,PSCPort,PSCUser,PSCProtocol,PSCPassword,SITableName,SIData,action);
+  //if(i%1000 == 0 && i != 0){
+    //  logger.addInfo("Entering into sleep mode...");
+      //TimeUnit.SECONDS.sleep(240);
+  //}
 }

@@ -60,13 +60,13 @@ var UUIDStr,os,action,SIData;
 for(var i=0;i<list.length;i++){
 	SIData    = [];
 	UUIDStr = generateUUID();
-    filter = "Name="+UUIDStr;
     try{
         os = list.item(i).getElementsByTagName("os").item(0).getTextContent();
     }catch(err){
         logger.addError("failed:"+err.message);
         continue;
     }
+	filter = "OSVersion="+os;
     var data 		    = 	getSITable(PSCIP,PSCPort,PSCProtocol,PSCUser,PSCPassword,SITableName,filter);
     var jsonData		= 	String(data);  //Get the JSON String.
     var results 		= 	new JSONObject(jsonData);
